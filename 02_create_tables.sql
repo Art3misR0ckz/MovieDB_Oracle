@@ -23,7 +23,7 @@ BEGIN
   END LOOP;
 
   FOR s IN (SELECT column_value AS sname
-              FROM TABLE(sys.odcivarchar2list('BOOKING_SEQ','PAYMENT_SEQ'))) LOOP
+              FROM TABLE(sys.odcivarchar2list('BOOKING_SEQ','PAYMENT_SEQ','MOVIE_SEQ','SHOW_SEQ'))) LOOP
     BEGIN
       EXECUTE IMMEDIATE 'DROP SEQUENCE ' || s.sname;
     EXCEPTION
@@ -229,11 +229,14 @@ CREATE TABLE payment (
 );
 
 -- ---------------------------------------------------------------------
--- 5. Sequences for NEW bookings/payments (sample data uses explicit IDs
+-- 5. Sequences for NEW bookings/payments/movies/shows (sample data uses explicit IDs
 --    below 100, so sequences start at 100 to avoid collisions).
 -- ---------------------------------------------------------------------
 CREATE SEQUENCE booking_seq START WITH 100 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE payment_seq START WITH 100 INCREMENT BY 1 NOCACHE;
+-- Used by the admin page of the web app to add new movies and shows
+CREATE SEQUENCE movie_seq   START WITH 100 INCREMENT BY 1 NOCACHE;
+CREATE SEQUENCE show_seq    START WITH 100 INCREMENT BY 1 NOCACHE;
 
 -- Quick check: should list 15 tables
 SELECT table_name FROM user_tables ORDER BY table_name;

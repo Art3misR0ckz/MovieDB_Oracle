@@ -417,7 +417,60 @@ We accept 3NF here because the extra column is exactly what lets the database en
 
 ---
 
-## Files and run order (Steps 5–9)
+## PHASE 2 — PL/SQL AND THE WEB APP (after mid-sem)
+
+### 10. Indexes, functions, procedures, triggers (`07_plsql.sql`)
+
+**Indexes.** Oracle builds an index automatically for every PRIMARY KEY and UNIQUE constraint, but not for foreign keys. We added six indexes on FK columns the app filters on (`booking.user_id`, `booking.show_id`, `movie_show.movie_id`, `review.movie_id`, `watchlist.movie_id`, `movie_genre.genre_id`). FK columns that are already the *leading* column of a PK/UNIQUE index (e.g. `seat.screen_id` in `UQ_SEAT_POSITION`) need no extra index.
+
+| Object | Kind | Why it exists |
+|--------|------|---------------|
+| `get_seat_price(show, seat)` | function | BR15 (premium = base + 100) written in exactly one place |
+| `get_avg_rating(movie)` | function | average rating, NULL when unrated; callable inside SELECT |
+| `seats_left(show)` | function | capacity − booked seats, computed (never stored) |
+| `book_seats(user, show, '101,102', OUT id)` | procedure | creates a PENDING booking + its seats as one unit; any failure rolls back to a savepoint, so all seats are booked or none |
+| `make_payment(booking, method)` | procedure | simulated payment: MERGE into PAYMENT (one row per booking, BR13), booking → CONFIRMED; `SELECT … FOR UPDATE` stops a booking being paid twice at once |
+| `cancel_booking(booking)` | procedure | BR16: frees the seats, keeps the booking as CANCELLED, payment → REFUNDED; refused once the show has started |
+| `save_review(user, movie, rating, text)` | procedure | MERGE = insert or update, so BR2 (one review per user per movie) becomes "edit your review" |
+| `print_user_activity(user)` | procedure | DBMS_OUTPUT report; demonstrates an explicit cursor and a cursor FOR loop |
+| `trg_review_clears_watchlist` | trigger | AFTER INSERT on REVIEW: logging a film removes it from your watchlist |
+
+**Transaction rule.** None of the procedures COMMIT. The caller decides, so `book_seats` + `make_payment` can be one transaction with a single COMMIT. This is exactly what the API does (`transaction()` in `app/backend/src/db.js`): COMMIT if every statement succeeded, ROLLBACK otherwise.
+
+**Why no "is the seat free?" check in `book_seats`.** A SELECT-then-INSERT has a race: two users can both see the seat free. The `UNIQUE (show_id, seat_id)` constraint is checked by Oracle at insert time, so the second insert waits for the first transaction and then fails with ORA-00001, which the procedure turns into ORA-20024.
+
+### 11. Upcoming shows (`08_upcoming_shows.sql`)
+
+The sample shows are fixed October 2026 dates, so once they are in the past nothing can be booked. This script adds 32 shows for the next four days, using dates relative to `SYSDATE`, so the demo always works. It is safe to re-run.
+
+### 12. PL/SQL + transaction demo (`09_plsql_demo.sql`)
+
+Eight parts, each with its expected output: functions, a full booking as one transaction, atomicity (all seats or none), every business-rule error, COMMIT vs ROLLBACK (including a failed payment that rolls back only to its own savepoint), the MERGE + trigger behaviour, the cursor report, and a cancellation. It leaves the data as it found it.
+
+### 13. Application (`app/`)
+
+Three tiers: React frontend → Express API → Oracle.
+
+- **The rules stay in the database.** The API never re-checks a rating, a seat or a status. It calls the procedures or runs plain SQL with bind variables, and `errors.js` turns the Oracle error into a readable message (e.g. ORA-00001 on `UQ_BSEAT_SHOW_SEAT` → "one of those seats was just booked").
+- **Bind variables everywhere** (`:userId`, never string concatenation), which rules out SQL injection.
+- **No login** (out of scope). A drop-down picks which sample user you are acting as.
+
+| Workflow | Page | Database objects used |
+|----------|------|-----------------------|
+| W1 browse / search | Movies | `MOVIE_DETAILS`, `MOVIE_RATING_SUMMARY` |
+| W2 movie page | Movie | views + `seats_left()` |
+| W3 rate / review | Movie | `save_review`, `CK_REV_RATING`, watchlist trigger |
+| W4 watchlist | Watchlist, Movie | `PK_WATCHLIST` |
+| W5 find shows | Shows | `THEATRE_SHOW_SCHEDULE`, `seats_left()` |
+| W6 book seats | Seat map | `SHOW_SEAT_STATUS`, `book_seats`, `UQ_BSEAT_SHOW_SEAT`, seat/screen trigger |
+| W7 pay | Payment | `make_payment` |
+| W8 my bookings / cancel | My bookings | `BOOKING_SUMMARY`, `cancel_booking` |
+| W9 admin | Admin | INSERT into MOVIE + MOVIE_GENRE in one transaction; `UQ_SHOW_SCREEN_START` |
+| Reports | Reports | six of the project queries, run live with their SQL shown |
+
+---
+
+## Files and run order
 
 | File | Contents |
 |------|----------|
@@ -426,5 +479,8 @@ We accept 3NF here because the extra column is exactly what lets the database en
 | `04_queries.sql` | Step 7: 37 queries grouped by concept, with expected results |
 | `05_views.sql` | Step 8: five views with demo queries |
 | `06_booking_integrity.sql` | Step 9: seat/screen trigger + a test script showing each invalid booking being rejected, ending in ROLLBACK |
+| `07_plsql.sql` | Step 10: indexes, 3 functions, 5 procedures, watchlist trigger |
+| `08_upcoming_shows.sql` | Step 11: 32 bookable shows over the next 4 days |
+| `09_plsql_demo.sql` | Step 12: PL/SQL and transaction demo |
 
-Run each file in SQL Developer with **Run Script (F5)**, in the order above.
+Run each file in SQL Developer with **Run Script (F5)**, in the order above, with auto-commit off.

@@ -31,4 +31,13 @@ SPOOL OFF
 SPOOL output_06_booking_integrity.log
 @06_booking_integrity.sql
 SPOOL OFF
+SPOOL output_07_plsql.log
+@07_plsql.sql
+SPOOL OFF
+SPOOL output_08_upcoming_shows.log
+@08_upcoming_shows.sql
+SPOOL OFF
+SPOOL output_09_plsql_demo.log
+@09_plsql_demo.sql
+SPOOL OFF
 EXIT
