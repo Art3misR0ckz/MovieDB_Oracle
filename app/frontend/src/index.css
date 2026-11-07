@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* A few reusable classes so the pages stay short */
+@layer components {
+  .card   { @apply rounded-xl border border-ink-line bg-ink-soft; }
+  .btn    { @apply inline-flex items-center justify-center gap-1 rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40; }
+  .btn-primary { @apply btn bg-reel text-ink hover:bg-reel-dark; }
+  .btn-ghost   { @apply btn border border-ink-line text-gray-200 hover:border-gray-500; }
+  .btn-danger  { @apply btn border border-red-500/50 text-red-300 hover:bg-red-500/10; }
+  .input  { @apply w-full rounded-lg border border-ink-line bg-ink px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-reel focus:outline-none; }
+  .label  { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400; }
+  .chip   { @apply inline-block rounded-full border border-ink-line px-2 py-0.5 text-xs text-gray-300; }
+  .h1     { @apply font-display text-3xl text-white; }
+  .h2     { @apply text-lg font-semibold text-white; }
+}

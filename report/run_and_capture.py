@@ -12,7 +12,8 @@ ORACLE_HOME = r"D:\app\oracle\product\21c\dbhomeXE"
 SQLPLUS = os.path.join(ORACLE_HOME, "bin", "sqlplus.exe")
 HOST = "172.16.122.58:1521/XEPDB1"
 FILES = ["02_create_tables.sql", "03_sample_data.sql", "04_queries.sql",
-         "05_views.sql", "06_booking_integrity.sql"]
+         "05_views.sql", "06_booking_integrity.sql", "07_plsql.sql",
+         "08_upcoming_shows.sql", "09_plsql_demo.sql"]
 MARK = "@@STMT@@"
 
 
@@ -36,7 +37,7 @@ def split_statements(text):
             if s.startswith("--"):
                 comments.append(s[2:].strip())
                 continue
-            plsql = bool(re.match(r"(BEGIN|DECLARE|CREATE\s+OR\s+REPLACE\s+TRIGGER)\b", s, re.I))
+            plsql = bool(re.match(r"(BEGIN|DECLARE|CREATE\s+OR\s+REPLACE\s+(TRIGGER|FUNCTION|PROCEDURE))\b", s, re.I))
         buf.append(line)
         if (plsql and s == "/") or (not plsql and s.endswith(";")):
             stmts.append((comments, "\n".join(buf)))
@@ -75,7 +76,7 @@ def run_file(name, cred):
 
 
 FEEDBACK = re.compile(r"^(\d+ rows? (selected|created|updated|deleted)\.|no rows selected|"
-                      r"(Table|View|Sequence|Trigger) created\.|PL/SQL procedure successfully completed\.|"
+                      r"(Table|View|Sequence|Trigger|Index|Function|Procedure) (created|dropped)\.|PL/SQL procedure successfully completed\.|"
                       r"Commit complete\.|Rollback complete\.|Savepoint created\.|Session altered\.)$")
 
 
