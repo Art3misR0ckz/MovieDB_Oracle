@@ -1,0 +1,81 @@
+name: Oracle assignment verification
+on: push
+permissions:
+  contents: read
+jobs:
+  oracle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      oracle:
+        image: gvenzl/oracle-xe:21-slim-faststart
+        env:
+          ORACLE_PASSWORD: EphemeralSystem_123
+          APP_USER: MOVIEDB
+          APP_USER_PASSWORD: EphemeralMovie_123
+        options: --health-cmd healthcheck.sh --health-interval 10s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate SQL on Oracle XE 21c
+        env:
+          ORACLE_CONTAINER: ${{ job.services.oracle.id }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re, runpy, subprocess
+
+          report = runpy.run_path("report/run_and_capture.py")
+          container = os.environ["ORACLE_CONTAINER"]
+          subprocess.run(["docker", "exec", "-i", container, "sqlplus", "-s", "-L",
+                          "SYSTEM/EphemeralSystem_123@localhost:1521/XEPDB1"],
+                         input="WHENEVER SQLERROR EXIT FAILURE\nGRANT CREATE VIEW TO MOVIEDB;\nEXIT\n",
+                         text=True, check=True)
+          connect = "MOVIEDB/EphemeralMovie_123@localhost:1521/XEPDB1"
+          command = ["docker", "exec", "-i", container, "sqlplus", "-s", "-L", connect]
+          for name in report["FILES"][:-1]:
+              cases = report["split_statements"](pathlib.Path(name).read_text())
+              script = ["SET DEFINE OFF", "SET SQLBLANKLINES ON", "SET SERVEROUTPUT ON",
+                        "SET AUTOCOMMIT OFF", "SET MARKUP CSV ON QUOTE ON"]
+              for idx, (_, sql) in enumerate(cases):
+                  script.extend([f"PROMPT __CASE_{idx}__", sql])
+              script.extend(["PROMPT __DONE__", "EXIT ROLLBACK"])
+              result = subprocess.run(command, input="\n".join(script) + "\n",
+                                      text=True, capture_output=True, check=True)
+              parts = re.split(r"^__CASE_(\d+)__\s*$", result.stdout, flags=re.M)
+              assert len(parts) == 2 * len(cases) + 1 and "__DONE__" in result.stdout, result.stdout
+              rows, failures = [], 0
+              for idx, (comments, sql) in enumerate(cases):
+                  raw = parts[2 * idx + 2].replace("__DONE__", "")
+                  outcome = report["parse_output"](raw)
+                  expected = re.search(r"EXPECT ERROR (ORA-\d+)(?:[^()]*\((\w+)\))?", " ".join(comments))
+                  errors = outcome["errors"]
+                  if expected:
+                      assert errors and errors[0].startswith(expected[1]), (name, sql, raw)
+                      if expected[2]:
+                          assert expected[2] in errors[0], (name, sql, raw)
+                      failures += 1
+                      print(f"{name}: {errors[0]}")
+                  else:
+                      assert not errors and "compilation errors" not in raw.lower(), (name, sql, raw)
+                  if outcome["rows"]:
+                      rows.append(outcome["rows"])
+              if name == "05_views.sql":
+                  assert len(rows) == 6, rows
+                  assert len(rows[0]) == 12 and rows[0][1][0] in {"3 Idiots", "Parasite", "Spirited Away"}, rows[0]
+                  assert rows[1][1][6:] == ["Action, Sci-Fi, Thriller", "Cillian Murphy, Leonardo DiCaprio, Michael Caine"], rows[1]
+                  assert len(rows[2]) == 4, rows[2]
+                  assert [row[0] for row in rows[3][1:]] == ["9", "10"], rows[3]
+                  assert [row[1] for row in rows[4][1:]] == [
+                      "A1  A2  A3  A4", "B1(X)  B2(X)  B3(X)  B4(X)", "C1(X)  C2(X)  C3  C4"], rows[4]
+                  assert {row[0] for row in rows[5][1:]} == {
+                      "BOOKING_SUMMARY", "MOVIE_DETAILS", "MOVIE_RATING_SUMMARY",
+                      "SHOW_SEAT_STATUS", "THEATRE_SHOW_SCHEDULE"}, rows[5]
+              if name == "06_booking_integrity.sql":
+                  assert failures == 14, failures
+                  assert rows == [
+                      [["SEAT_LABEL", "SEAT_STATUS"], ["A1", "BOOKED"], ["A2", "AVAILABLE"],
+                       ["A3", "AVAILABLE"], ["A4", "AVAILABLE"]],
+                      [["BOOKING_ID", "STATUS"], ["900", "PENDING"]],
+                      [["PAYMENTS_FOR_900"], ["0"]], [["BOOKING_900_ROWS"], ["0"]],
+                      [["SEAT_101_BOOKED"], ["0"]]], rows
+              print(f"PASS {name}: {len(cases)} statements, {failures} expected errors")
+          PY
