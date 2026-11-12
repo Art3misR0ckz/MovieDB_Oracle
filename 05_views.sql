@@ -2,8 +2,8 @@
 -- STEP 8 : VIEWS
 -- A view is a stored query. It stores no data of its own; each time it
 -- is queried, Oracle runs the underlying SELECT on the base tables.
--- All five views below contain joins/aggregates, so they are read-only
--- (not updatable) — that is fine, they are for reporting.
+-- All five views explicitly allow reads only. Booking and review changes
+-- go through the base tables or the project's PL/SQL procedures.
 -- =====================================================================
 
 
@@ -22,7 +22,8 @@ SELECT m.movie_id,
        ROUND(AVG(r.rating), 2) AS avg_rating
 FROM   movie m
 LEFT   JOIN review r ON r.movie_id = m.movie_id
-GROUP  BY m.movie_id, m.title, m.movie_language;
+GROUP  BY m.movie_id, m.title, m.movie_language
+WITH READ ONLY;
 
 
 -- ---------------------------------------------------------------------
@@ -45,11 +46,12 @@ SELECT m.movie_id,
         FROM   movie_genre mg
         JOIN   genre g ON g.genre_id = mg.genre_id
         WHERE  mg.movie_id = m.movie_id) AS genres,
-       (SELECT LISTAGG(a.actor_name, ', ') WITHIN GROUP (ORDER BY a.actor_name)
+       (SELECT LISTAGG(a.actor_name, ', ') WITHIN GROUP (ORDER BY a.actor_name, a.actor_id)
         FROM   movie_actor ma
         JOIN   actor a ON a.actor_id = ma.actor_id
         WHERE  ma.movie_id = m.movie_id) AS cast_list
-FROM   movie m;
+FROM   movie m
+WITH READ ONLY;
 
 
 -- ---------------------------------------------------------------------
@@ -72,7 +74,8 @@ SELECT sh.show_id,
 FROM   movie_show sh
 JOIN   movie   m  ON m.movie_id   = sh.movie_id
 JOIN   screen  sc ON sc.screen_id = sh.screen_id
-JOIN   theatre t  ON t.theatre_id = sc.theatre_id;
+JOIN   theatre t  ON t.theatre_id = sc.theatre_id
+WITH READ ONLY;
 
 
 -- ---------------------------------------------------------------------
@@ -101,7 +104,8 @@ JOIN   theatre    t  ON t.theatre_id  = sc.theatre_id
 LEFT   JOIN booking_seat bs ON bs.booking_id = b.booking_id
 LEFT   JOIN payment      p  ON p.booking_id  = b.booking_id
 GROUP  BY b.booking_id, u.username, m.title, t.theatre_name, sh.show_start,
-          b.status, p.payment_status, p.amount;
+          b.status, p.payment_status, p.amount
+WITH READ ONLY;
 
 
 -- ---------------------------------------------------------------------
@@ -128,7 +132,8 @@ FROM   movie_show sh
 JOIN   movie m  ON m.movie_id   = sh.movie_id
 JOIN   seat  st ON st.screen_id = sh.screen_id
 LEFT   JOIN booking_seat bs ON bs.show_id = sh.show_id
-                           AND bs.seat_id = st.seat_id;
+                           AND bs.seat_id = st.seat_id
+WITH READ ONLY;
 
 
 -- =====================================================================
@@ -139,7 +144,7 @@ LEFT   JOIN booking_seat bs ON bs.show_id = sh.show_id
 SELECT title, avg_rating, review_count
 FROM   movie_rating_summary
 WHERE  review_count >= 2
-ORDER  BY avg_rating DESC;
+ORDER  BY avg_rating DESC, title, movie_id;
 
 -- A movie page
 SELECT * FROM movie_details WHERE title = 'Inception';
@@ -149,13 +154,14 @@ SELECT theatre_name, screen_no, title, TO_CHAR(show_start, 'HH24:MI') AS starts,
 FROM   theatre_show_schedule
 WHERE  city = 'Hyderabad'
 AND    TRUNC(show_start) = DATE '2026-10-03'
-ORDER  BY show_start;
+ORDER  BY show_start, show_id;
 
--- Bookings where the amount charged doesn't match the seats (should be
--- only the cancelled/refunded ones, whose seats were released)
+-- In the sample data, the cancelled bookings (9 and 10) retain their
+-- payment records after their seat rows have been released.
 SELECT booking_id, username, booking_status, total_amount, amount_charged, payment_status
 FROM   booking_summary
-WHERE  total_amount <> NVL(amount_charged, 0);
+WHERE  total_amount <> NVL(amount_charged, 0)
+ORDER  BY booking_id;
 
 -- Seat map for show 1, laid out row by row
 SELECT seat_row,

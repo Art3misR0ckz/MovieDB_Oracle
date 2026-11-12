@@ -1,6 +1,6 @@
 -- =====================================================================
 -- STEP 9 : BASIC BOOKING INTEGRITY
--- Run AFTER 02, 03 (and optionally 05).
+-- Run in a sample-data schema after 02, 03 and 05, with auto-commit off.
 --
 -- Almost every rule is already enforced by constraints in 02_create_tables:
 --
@@ -78,6 +78,10 @@ SAVEPOINT after_valid_seat;
 INSERT INTO booking (booking_id, user_id, show_id, status)
 VALUES (901, 8, 999, 'PENDING');
 
+-- EXPECT ERROR ORA-02291 (FK_BOOKING_USER)
+INSERT INTO booking (booking_id, user_id, show_id, status)
+VALUES (901, 999, 1, 'PENDING');
+
 -- ---- 3. Booking a nonexistent seat ----------------------------------
 -- EXPECT ERROR ORA-02291 (FK_BSEAT_SEAT)
 INSERT INTO booking_seat (booking_id, show_id, seat_id, price_paid)
@@ -94,6 +98,15 @@ VALUES (900, 1, 105, 250);
 -- EXPECT ERROR ORA-20001: Seat 201 is not in screen 1 where show 1 is running.
 INSERT INTO booking_seat (booking_id, show_id, seat_id, price_paid)
 VALUES (900, 1, 201, 250);
+
+-- Changing either side of a valid booking seat must also be checked.
+-- EXPECT ERROR ORA-20001
+UPDATE booking_seat SET seat_id = 201
+WHERE booking_id = 900 AND seat_id = 101;
+
+-- EXPECT ERROR ORA-20001
+UPDATE booking_seat SET show_id = 2
+WHERE booking_id = 900 AND seat_id = 101;
 
 -- ---- 6. show_id in BOOKING_SEAT disagrees with the booking ----------
 -- Booking 900 is for show 1, but this row claims show 2.
@@ -136,8 +149,10 @@ INSERT INTO payment (payment_id, booking_id, amount, payment_method, payment_sta
 VALUES (901, 900, 250, 'CARD', 'SUCCESS', SYSDATE);
 
 -- The valid work from steps 1 and 10 is still visible in THIS session:
-SELECT seat_label, seat_status FROM show_seat_status WHERE show_id = 1 AND seat_row = 'A';
--- (Requires 05_views.sql. A1 shows as BOOKED.)
+SELECT seat_label, seat_status FROM show_seat_status
+WHERE show_id = 1 AND seat_row = 'A'
+ORDER BY seat_number;
+-- A1 shows as BOOKED and A2 through A4 remain AVAILABLE.
 
 -- ---- 12. ROLLBACK TO SAVEPOINT vs full ROLLBACK ---------------------
 -- Undo everything after the savepoint (the payment + CONFIRMED status),
@@ -151,6 +166,8 @@ SELECT COUNT(*) AS payments_for_900 FROM payment WHERE booking_id = 900  /* 0 */
 ROLLBACK;
 
 SELECT COUNT(*) AS booking_900_rows FROM booking WHERE booking_id = 900  /* 0 */;
+SELECT COUNT(*) AS seat_101_booked FROM show_seat_status
+WHERE show_id = 1 AND seat_id = 101 AND seat_status = 'BOOKED' /* 0 */;
 
 
 -- =====================================================================
